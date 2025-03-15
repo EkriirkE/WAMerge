@@ -1,5 +1,4 @@
-#!python WAMerge.py
-
+#!/usr/bin/env python
 #--------========########========--------
 #	WhatsApp Message Store Merger
 #	2025-03-01	Erik Johnson - EkriirkE
