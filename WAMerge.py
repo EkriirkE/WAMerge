@@ -26,10 +26,13 @@ print("Preparing to merge WA databases:")
 
 #Make a copy and work with the copy if valid
 if msgstore_merged not in (None,"",msgstore_A,msgstore_B):
-	with open(msgstore_A,"rb") as src:
-		with open(msgstore_merged,"wb") as dst:
-			dst.truncate()
-			dst.write(src.read())
+	for suffix in ("","-shm","-wal"):
+		try:
+			with open(msgstore_A+suffix,"rb") as src:
+				with open(msgstore_merged+suffix,"wb") as dst:
+					dst.truncate()
+					dst.write(src.read())
+		except Exception as e:print(e)
 	db=sqlite3.connect(msgstore_merged)
 
 else:	#Otherwise work with original file directly
