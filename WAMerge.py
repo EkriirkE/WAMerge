@@ -69,7 +69,7 @@ def getBAchat(b_chat_id):
 	if not (bc:=next((x for x in b_chat if x["_id"]==b_chat_id),None)):
 		print(f"Could not resolve B.chat._id={b_chat_id}")
 	else:
-		bj,aj=getBAjid(bc["chat_row_id"])
+		bj,aj=getBAjid(bc["jid_row_id"])
 	if aj and not (ac:=next((x for x in a_chat if x["jid_row_id"]==aj["_id"]),None)):
 		print(f"Could not resolve A.chat._id={aj['_id']}")
 	return (bc,bj,aj,ac)
