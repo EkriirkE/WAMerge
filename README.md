@@ -34,7 +34,7 @@ Just run the script:
   `python WAMerge.py`
 
 This will copy users, groups, call history, chat [messages, links, media/albums, locations, mentions, replies, reactions]  
-You may end up with just a msgstore.db without the 2 shm/wal files, and that is OK!  When you copy it back to your phone make sure to delete them from the phone before copying the new db.  If you still have shm/wal files, be sure to copy them as well.
+By default you will get a new file `msgstore.db.merged` without the 2 shm/wal files!  When you copy it back to your phone make sure to delete the msgstore.db* files from the phone before copying the new db, and renaming it back to `msgstore.db`.
 
 What I haven't bothered with are chat polls, commerce/payment related stuff.
 I will work on those later as they were not important to me at this time.
