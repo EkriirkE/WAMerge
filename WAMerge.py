@@ -9,11 +9,11 @@
 #	python WAMerge.py
 #
 #--------========########========--------
+
 import sqlite3
 
 db=sqlite3.connect("msgstore.db")
 db.execute("ATTACH 'msgstore.small' AS b")
-
 db.row_factory=sqlite3.Row
 #db.autocommit=True
 
@@ -90,7 +90,7 @@ if 1:
 		cur.execute(f"INSERT INTO message ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		print(cur.lastrowid)
 		db.execute("UPDATE message SET sort_id=? WHERE _id=?",(cur.lastrowid,cur.lastrowid))
-		db.execute("UPDATE chat SET display_message_row_id=? last_message_row_id=? WHERE _id=?",(cur.lastrowid,cur.lastrowid,ac["id"]))
+		db.execute("UPDATE chat SET display_message_row_id=?,last_message_row_id=? WHERE _id=?",(cur.lastrowid,cur.lastrowid,ac["_id"]))
 
 if 1:
 	print("Message secrets...")
@@ -206,7 +206,7 @@ if 1:
 			print(f"Could not resolve A.chat._id={apj['_id']}")
 			continue
 
-		print(f"Copy {row['key_id']} ({row['chat_row_id']}:{row['_id']})",end="...",flush=True)
+		print(f"Copy {row['key_id']} ({row['chat_row_id']}:{row['message_row_id']})",end="...",flush=True)
 
 		r={x:row[x] for x in row.keys() if x in tablecols("message_quoted",sans=("_id"))}
 		r["message_row_id"]=am["_id"]
@@ -296,3 +296,4 @@ if 1:
 cur.close()
 db.commit()
 db.close()
+print("\n\nDone!")
