@@ -12,10 +12,29 @@
 
 import sqlite3
 
+#Larger message store, usully the older one
+msgstore_A = "msgstore.db"
+#Smaller message store, usually the most recent
+msgstore_B = "msgstore.small"
+#Newly merged message store.  Set to None if you want to merge B directly into A
+msgstore_merged = "msgstore.db.merged"
+
+
+
+
 print("Preparing to merge WA databases:")
-if 1:
-	db=sqlite3.connect("msgstore.db")
-	db.execute("ATTACH 'msgstore.small' AS b")
+
+#Make a copy and work with the copy if valid
+if msgstore_merged not in (None,"",msgstore_A,msgstore_B):
+	with open(msgstore_A,"rb") as src:
+		with open(msgstore_merged,"wb") as dst:
+			dst.truncate()
+			dst.write(src.read())
+	db=sqlite3.connect(msgstore_merged)
+
+else:	#Otherwise work with original file directly
+	db=sqlite3.connect(msgstore_A)
+db.execute(f"ATTACH '{msgstore_B}' AS b")
 db.row_factory=sqlite3.Row
 #db.autocommit=True
 cur=db.cursor()
