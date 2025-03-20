@@ -9,13 +9,11 @@
 #	python WAMerge.py
 #
 #--------========########========--------
-
 import sqlite3
 
-print("Preparing to merge WA databases:")
-if 1:
-	db=sqlite3.connect("msgstore.db")
-	db.execute("ATTACH 'msgstore.small' AS b")
+db=sqlite3.connect("msgstore.db")
+db.execute("ATTACH 'msgstore.small' AS b")
+
 db.row_factory=sqlite3.Row
 #db.autocommit=True
 
@@ -33,7 +31,6 @@ for row in db.execute("SELECT * FROM b.jid").fetchall():b_jid+=[{x:row[x] for x 
 b_chat=[]
 for row in db.execute("SELECT * FROM b.chat").fetchall():b_chat+=[{x:row[x] for x in row.keys()}]
 
-#Match B message to A message via common key_id
 a_msg=[]
 b_msg=[]
 def getBAmsg(b_msg_id):
@@ -55,79 +52,45 @@ def getBAmsg(b_msg_id):
 	a_msg+=[r]
 	return r
 
-#Match B jid to A jid via common user
-def getBAjid(b_j_id):
-	if not (bj:=next((x for x in b_jid if x["_id"]==b_j_id),None)):
-		print(f"Could not resolve B.jid._id={b_j_id}")
-	elif not (aj:=next((x for x in a_jid if x["user"]==bj["user"]),None)):
-		print(f"Could not resolve A.jid.user={bj['user']}")
-	return (bj,aj)
-
-#Match B chat to A chat via common jid user
-def getBAchat(b_chat_id):
-	bj=aj=ac=None
-	if not (bc:=next((x for x in b_chat if x["_id"]==b_chat_id),None)):
-		print(f"Could not resolve B.chat._id={b_chat_id}")
-	else:
-		bj,aj=getBAjid(bc["jid_row_id"])
-	if aj and not (ac:=next((x for x in a_chat if x["jid_row_id"]==aj["_id"]),None)):
-		print(f"Could not resolve A.chat._id={aj['_id']}")
-	return (bc,bj,aj,ac)
-
 #Instead of inheriting the columns from source DB as the schemas may differ. So get what actually exists in the dest DB
 schemas={}
-def tablecols(table,sans=[],pk=False):
+def tablecols(table,sans=[]):
 	if t:=schemas.get(table):return t
-	res=db.execute(f"SELECT name,pk FROM pragma_table_info('{table}')").fetchall()
-	t=[x["name"] for x in res if x["name"] not in sans and (pk or not x["pk"])]
+	res=db.execute(f"SELECT name FROM pragma_table_info('{table}')").fetchall()
+	t=[x["name"] for x in res if x["name"] not in sans]
 	schemas.update({table:t})
 	return t
 
 if 1:
-	print("People & groups...")
-	for row in b_jid:
-		if next((x for x in a_jid if x["user"]==row["user"]),None):continue
-
-		print(f"Copy {row['_id']} ({row['user']})",end="...",flush=True)
-
-		r={x:row[x] for x in row if x in tablecols("jid")}
-		cur.execute(f"INSERT INTO jid ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
-		print(cur.lastrowid)
-		r["_id"]=cur.lastrowid
-		a_jid+=[r]
-	
-	for row in b_chat:
-		bj,aj=getBAjid(row["jid_row_id"])
-		if not bj or aj:continue
-
-		print(f"Copy {row['_id']} ({row['subject']})",end="...",flush=True)
-
-		r={x:row[x] for x in row if x in tablecols("chat")}
-		cur.execute(f"INSERT INTO chat ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
-		print(cur.lastrowid)
-		r["_id"]=cur.lastrowid
-		a_chat+=[r]
-		
-if 1:
 	print("Messages...")
 	for row in db.execute("SELECT * FROM b.message WHERE message_type NOT IN (7,11) AND key_id NOT IN (SELECT key_id FROM message) ORDER BY timestamp ASC").fetchall():
 		#b_msg+=[{x:row[x] for x in row.keys()}]
-		bc,bj,aj,ac=getBAchat(row["chat_row_id"])
-		if not (bc and bj and aj and ac):continue
-		bsj,asj=getBAjid(bc["sender_jid_row_id"])
-		if bc["sender_jid_row_id"] and not (bsj and asj):continue
+		if not (bc:=next((x for x in b_chat if x["_id"]==row["chat_row_id"]),None)):
+			print(f"Could not resolve B.chat._id={row['chat_row_id']}")
+			continue
+		if not (bj:=next((x for x in b_jid if x["_id"]==bc["jid_row_id"]),None)):
+			print(f"Could not resolve B.jid._id={bc['jid_row_id']}")
+			continue
+		if not (bsj:=next((x for x in b_jid if x["_id"]==row["sender_jid_row_id"]),None)) and row["sender_jid_row_id"]:
+			print(f"Could not resolve sender B.jid._id={row['sender_jid_row_id']}")
+			continue
+		if not (aj:=next((x for x in a_jid if x["user"]==bj["user"]),None)):
+			print(f"Could not resolve A.jid.user={bj['user']}")
+			continue
+		if not (ac:=next((x for x in a_chat if x["jid_row_id"]==aj["_id"]),None)):
+			print(f"Could not resolve A.chat._id={aj['_id']}")
+			continue
 
 		print(f"Copy {row['key_id']} ({row['chat_row_id']}:{row['_id']})",end="...",flush=True)
 
-		r={x:row[x] for x in row.keys() if x in tablecols("message",sans=("sort_id",))}
+		r={x:row[x] for x in row.keys() if x in tablecols("message",sans=("_id","sort_id"))}
 		r["chat_row_id"]=ac["_id"]
-		if asj:r["sender_jid_row_id"]=asj["_id"]
+		if bsj:r["sender_jid_row_id"]=bsj["_id"]
 		#print(f"INSERT INTO message ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		cur.execute(f"INSERT INTO message ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		print(cur.lastrowid)
 		db.execute("UPDATE message SET sort_id=? WHERE _id=?",(cur.lastrowid,cur.lastrowid))
 		db.execute("UPDATE chat SET display_message_row_id=? last_message_row_id=? WHERE _id=?",(cur.lastrowid,cur.lastrowid,ac["id"]))
-	#UPDATE chat SET display_message_row_id=(SELECT MAX(message._id) FROM message WHERE message.chat_row_id=chat._id);
 
 if 1:
 	print("Message secrets...")
@@ -169,12 +132,19 @@ if 1:
 	print("Message mentions...")
 	for row in db.execute("SELECT * FROM b.message_mentions WHERE message_row_id NOT IN (SELECT message_row_id FROM message_mentions)").fetchall():
 		if not (am:=getBAmsg(row["message_row_id"])):continue
-		bc,bj,aj,ac=getBAchat(row["chat_row_id"])
-		if not (bc and bj and aj):continue
+		if not (bc:=next((x for x in b_chat if x["_id"]==row["chat_row_id"]),None)):
+			print(f"Could not resolve B.chat._id={row['chat_row_id']}")
+			continue
+		if not (bj:=next((x for x in b_jid if x["_id"]==bc["jid_row_id"]),None)):
+			print(f"Could not resolve B.jid._id={bc['jid_row_id']}")
+			continue
+		if not (aj:=next((x for x in a_jid if x["user"]==bj["user"]),None)):
+			print(f"Could not resolve A.jid.user={bj['user']}")
+			continue
 
 		print(f"Copy {row['message_row_id']}",end="...",flush=True)
 
-		r={x:row[x] for x in row.keys() if x in tablecols("message_mentions")}
+		r={x:row[x] for x in row.keys() if x in tablecols("message_mentions",sans=("_id",))}
 		r["message_row_id"]=am["_id"]
 		r["jit_row_id"]=aj["_id"]
 		cur.execute(f"INSERT INTO message_mentions ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
@@ -187,7 +157,7 @@ if 1:
 
 		print(f"Copy {row['message_row_id']}",end="...",flush=True)
 
-		r={x:row[x] for x in row.keys() if x in tablecols("message_link")}
+		r={x:row[x] for x in row.keys() if x in tablecols("message_link",sans=("_id",))}
 		r["message_row_id"]=am["_id"]
 		r["chat_row_id"]=am["chat_row_id"]
 		cur.execute(f"INSERT INTO message_link ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
@@ -210,20 +180,39 @@ if 1:
 	print("Message quoted...")
 	for row in db.execute("SELECT * FROM b.message_quoted WHERE message_row_id NOT IN (SELECT message_row_id FROM message_quoted)").fetchall():
 		if not (am:=getBAmsg(row["message_row_id"])):continue
-		bc,bj,aj,ac=getBAchat(row["chat_row_id"])
-		if not (bc and bj and aj):continue
-		bpc,bpj,apj,apc=getBAchat(row["parent_message_chat_row_id"])
-		if not (bpc and bpj and apj and apc):continue
-		bsj,asj=getBAjid(row["sender_jid_row_id"])
-		if bc["sender_jid_row_id"] and not (bsj and asj):continue
+		if not (bc:=next((x for x in b_chat if x["_id"]==row["chat_row_id"]),None)):
+			print(f"Could not resolve B.chat._id={row['chat_row_id']}")
+			continue
+		if not (bj:=next((x for x in b_jid if x["_id"]==bc["jid_row_id"]),None)):
+			print(f"Could not resolve B.jid._id={bc['jid_row_id']}")
+			continue
+		if not (bsj:=next((x for x in b_jid if x["_id"]==row["sender_jid_row_id"]),None)) and row["sender_jid_row_id"]:
+			print(f"Could not resolve sender B.jid._id={row['sender_jid_row_id']}")
+			continue
+		if not (aj:=next((x for x in a_jid if x["user"]==bj["user"]),None)):
+			print(f"Could not resolve A.jid.user={bj['user']}")
+			continue
+
+		if not (bpc:=next((x for x in b_chat if x["_id"]==row["parent_message_chat_row_id"]),None)):
+			print(f"Could not resolve B.chat._id={row['chat_row_id']}")
+			continue
+		if not (bpj:=next((x for x in b_jid if x["_id"]==bpc["jid_row_id"]),None)):
+			print(f"Could not resolve B.jid._id={bpc['jid_row_id']}")
+			continue
+		if not (apj:=next((x for x in a_jid if x["user"]==bpj["user"]),None)):
+			print(f"Could not resolve A.jid.user={bpj['user']}")
+			continue
+		if not (apc:=next((x for x in a_chat if x["jid_row_id"]==apj["_id"]),None)):
+			print(f"Could not resolve A.chat._id={apj['_id']}")
+			continue
 
 		print(f"Copy {row['key_id']} ({row['chat_row_id']}:{row['_id']})",end="...",flush=True)
 
-		r={x:row[x] for x in row.keys() if x in tablecols("message_quoted")}
+		r={x:row[x] for x in row.keys() if x in tablecols("message_quoted",sans=("_id"))}
 		r["message_row_id"]=am["_id"]
 		r["chat_row_id"]=am["chat_row_id"]
 		r["parent_message_chat_row_id"]=apc["_id"]
-		if asj:r["sender_jid_row_id"]=asj["_id"]
+		if bsj:r["sender_jid_row_id"]=bsj["_id"]
 		cur.execute(f"INSERT INTO message_quoted ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		print(cur.lastrowid)
 
@@ -233,27 +222,36 @@ if 1:
 
 		print(f"Copy {row['parent_message_row_id']}:{row['child_message_row_id']}",end="...",flush=True)
 
-		r={x:row[x] for x in row.keys() if x in tablecols("message_association")}
+		r={x:row[x] for x in row.keys() if x in tablecols("message_association",sans=("_id",))}
 		cur.execute(f"INSERT INTO message_association ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		print(cur.lastrowid)
-
-	
 
 if 1:
 	print("Message addons...")
 	for row in db.execute("SELECT * FROM b.message_add_on WHERE parent_message_row_id||':'||chat_row_id NOT IN (SELECT parent_message_row_id||':'||chat_row_id FROM message_add_on) ORDER BY timestamp ASC").fetchall():
 		if not (am:=getBAmsg(row["parent_message_row_id"])):continue
-		bc,bj,aj,ac=getBAchat(row["chat_row_id"])
-		if not (bc and bj and aj and ac):continue
-		bsj,asj=getBAjid(row["sender_jid_row_id"])
-		if not (bsj and asj):continue
+		if not (bc:=next((x for x in b_chat if x["_id"]==row["chat_row_id"]),None)):
+			print(f"Could not resolve B.chat._id={row['chat_row_id']}")
+			continue
+		if not (bj:=next((x for x in b_jid if x["_id"]==bc["jid_row_id"]),None)):
+			print(f"Could not resolve B.jid._id={bc['jid_row_id']}")
+			continue
+		if not (bsj:=next((x for x in b_jid if x["_id"]==row["sender_jid_row_id"]),None)) and row["sender_jid_row_id"]:
+			print(f"Could not resolve sender B.jid._id={row['sender_jid_row_id']}")
+			continue
+		if not (aj:=next((x for x in a_jid if x["user"]==bj["user"]),None)):
+			print(f"Could not resolve A.jid.user={bj['user']}")
+			continue
+		if not (ac:=next((x for x in a_chat if x["jid_row_id"]==aj["_id"]),None)):
+			print(f"Could not resolve A.chat._id={aj['_id']}")
+			continue
 
 		print(f"Copy {row['parent_message_row_id']}",end="...",flush=True)
 
-		r={x:row[x] for x in row.keys() if x in tablecols("message_add_on")}
+		r={x:row[x] for x in row.keys() if x in tablecols("message_add_on",sans=("_id",))}
 		r["parent_message_row_id"]=am["_id"]
 		r["chat_row_id"]=ac["_id"]
-		r["sender_jid_row_id"]=asj["_id"]
+		r["sender_jid_row_id"]=bsj["_id"]
 		cur.execute(f"INSERT INTO message_add_on ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		aid=cur.lastrowid
 		print(aid)
@@ -271,12 +269,16 @@ if 1:
 if 1:
 	print("Call log...")
 	for row in db.execute("SELECT * FROM b.call_log WHERE call_id NOT IN (SELECT call_id FROM call_log) ORDER BY timestamp ASC").fetchall():
-		bj,aj=getBAjid(row["jid_row_id"])
-		if not (bj and aj):continue
+		if not (bj:=next((x for x in b_jid if x["_id"]==row["jid_row_id"]),None)):
+			print(f"Could not resolve B.jid._id={bc['jid_row_id']}")
+			continue
+		if not (aj:=next((x for x in a_jid if x["user"]==bj["user"]),None)):
+			print(f"Could not resolve A.jid.user={bj['user']}")
+			continue
 
 		print(f"Copy {row['call_id']} ({row['jid_row_id']}:{row['_id']})",end="...",flush=True)
 
-		r={x:row[x] for x in row.keys() if x in tablecols("call_log")}
+		r={x:row[x] for x in row.keys() if x in tablecols("call_log",sans=("_id",))}
 		r["jid_row_id"]=aj["_id"]
 		cur.execute(f"INSERT INTO call_log ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		print(cur.lastrowid)
@@ -294,4 +296,3 @@ if 1:
 cur.close()
 db.commit()
 db.close()
-print("\n\nDone!")
