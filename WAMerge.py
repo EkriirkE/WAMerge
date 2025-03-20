@@ -190,14 +190,14 @@ if 1:
 	print("Message mentions...")
 	for row in db.execute("SELECT mm.* FROM b.message_mentions mm INNER JOIN b.message m ON m._id=mm.message_row_id WHERE m.key_id NOT IN (SELECT key_id FROM message_mentions xmm INNER JOIN message xm ON xm._id=xmm.message_row_id)").fetchall():
 		if not (am:=getBAmsg(row["message_row_id"])):continue
-		bc,bj,aj,ac=getBAchat(row["chat_row_id"])
-		if not (bc and bj and aj):continue
+		bj,aj=getBAjid(row["jid_row_id"])
+		if not (bj and aj):continue
 
 		print(f"Copy {row['message_row_id']}",end="...",flush=True)
 
 		r={x:row[x] for x in row.keys() if x in tablecols("message_mentions")}
 		r["message_row_id"]=am["_id"]
-		r["jit_row_id"]=aj["_id"]
+		r["jid_row_id"]=aj["_id"]
 		cur.execute(f"INSERT INTO message_mentions ({','.join((x for x in r))}) VALUES ({','.join('?'*len(r))})",tuple(r[x] for x in r))
 		print(cur.lastrowid)
 
